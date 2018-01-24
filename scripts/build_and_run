@@ -42,7 +42,7 @@ if [ $REBUILD -eq 1 ]; then
 	if ! ps | grep scripts/build.js | grep -v grep > /dev/null; then
 		echo "Running JS build process"
 		echo
-		cd ~/zotero-client
+		cd ~/jurism
 		npm run build
 		echo
 	fi
