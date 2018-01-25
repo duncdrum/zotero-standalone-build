@@ -4,17 +4,17 @@
 #                     Center for History and New Media
 #                     George Mason University, Fairfax, Virginia, USA
 #                     http://zotero.org
-# 
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -57,7 +57,8 @@ Options
  -t                  build with debugging support
  -p PLATFORMS        build for platforms PLATFORMS (m=Mac, w=Windows, l=Linux)
  -c CHANNEL          use update channel CHANNEL
- -s                  don\'t package; only build binaries in staging/ directory
+ -e                  enforce signing
+ -s                  don't package; only build binaries in staging/ directory
 DONE
 	exit 1
 }
@@ -91,7 +92,7 @@ BUILD_WIN32=0
 BUILD_LINUX=0
 PACKAGE=1
 DEVTOOLS=0
-while getopts "d:f:p:c:ts" opt; do
+while getopts "d:f:p:c:tse" opt; do
 	case $opt in
 		d)
 			SOURCE_DIR="$OPTARG"
@@ -118,6 +119,9 @@ while getopts "d:f:p:c:ts" opt; do
 			;;
 		t)
 			DEVTOOLS=1
+			;;
+		e)
+			SIGN=1
 			;;
 		s)
 			PACKAGE=0
@@ -277,7 +281,7 @@ cd "$CALLDIR"
 # Mac
 if [ $BUILD_MAC == 1 ]; then
 	echo 'Building Jurism.app'
-		
+
 	# Set up directory structure
 	APPDIR="$STAGE_DIR/Jurism.app"
 	rm -rf "$APPDIR"
@@ -285,43 +289,48 @@ if [ $BUILD_MAC == 1 ]; then
 	chmod 755 "$APPDIR"
 	cp -r "$CALLDIR/mac/Contents" "$APPDIR"
 	CONTENTSDIR="$APPDIR/Contents"
-	
+
 	# Modify platform-specific prefs
 	perl -pi -e 's/pref\("browser\.preferences\.instantApply", false\);/pref\("browser\.preferences\.instantApply", true);/' "$BUILD_DIR/zotero/defaults/preferences/prefs.js"
-	
+
 	# Merge relevant assets from Firefox
 	mkdir "$CONTENTSDIR/MacOS"
-	cp -r "$MAC_RUNTIME_PATH/Contents/MacOS/"!(firefox-bin|crashreporter.app) "$CONTENTSDIR/MacOS"
-	cp -r "$MAC_RUNTIME_PATH/Contents/Resources/"!(application.ini|updater.ini|update-settings.ini|browser|precomplete|removed-files|webapprt*|*.icns|defaults|*.lproj) "$CONTENTSDIR/Resources"
+  cp -r "$MAC_RUNTIME_PATH/Contents/MacOS/"!(firefox|firefox-bin|crashreporter.app|pingsender|updater.app) "$CONTENTSDIR/MacOS"
+  cp -r    "$MAC_RUNTIME_PATH/Contents/Resources/"!(application.ini|updater.ini|update-settings.ini|browser|devtools-files|precomplete|removed-files|webapprt*|*.icns|defaults|*.lproj) "$CONTENTSDIR/Resources"
 
 	# Use our own launcher
 	mv "$CONTENTSDIR/MacOS/firefox" "$CONTENTSDIR/MacOS/jurism-bin"
 	cp "$CALLDIR/mac/jurism" "$CONTENTSDIR/MacOS/jurism"
 	cp "$BUILD_DIR/application.ini" "$CONTENTSDIR/Resources"
-	
+
 	cd "$CONTENTSDIR/MacOS"
 	tar -xjf "$CALLDIR/mac/updater.tar.bz2"
-	
+
+	# Copy PDF tools and data
+	cp "$CALLDIR/pdftools/pdftotext-mac" "$CONTENTSDIR/MacOS/pdftotext"
+	cp "$CALLDIR/pdftools/pdfinfo-mac" "$CONTENTSDIR/MacOS/pdfinfo"
+	cp -R "$CALLDIR/pdftools/poppler-data" "$CONTENTSDIR/Resources/"
+
 	# Modify Info.plist
 	perl -pi -e "s/{{VERSION}}/$VERSION/" "$CONTENTSDIR/Info.plist"
 	perl -pi -e "s/{{VERSION_NUMERIC}}/$VERSION_NUMERIC/" "$CONTENTSDIR/Info.plist"
-	# Needed for "monkeypatch" Windows builds: 
+	# Needed for "monkeypatch" Windows builds:
 	# http://www.nntp.perl.org/group/perl.perl5.porters/2010/08/msg162834.html
 	rm -f "$CONTENTSDIR/Info.plist.bak"
-	
+
 	# Add components
 	cp -R "$BUILD_DIR/zotero/"* "$CONTENTSDIR/Resources"
-	
+
 	# Add Mac-specific Standalone assets
 	cd "$CALLDIR/assets/mac"
 	zip -r -q "$CONTENTSDIR/Resources/jurism.jar" *
-	
+
 	# Add devtools
 	if [ $DEVTOOLS -eq 1 ]; then
 		cp -r "$MAC_RUNTIME_PATH"/Contents/Resources/devtools-files/chrome/* "$CONTENTSDIR/Resources/chrome/"
 		cp "$MAC_RUNTIME_PATH/Contents/Resources/devtools-files/components/interfaces.xpt" "$CONTENTSDIR/Resources/components/"
 	fi
-	
+
 	# Add word processor plug-ins
 	mkdir "$CONTENTSDIR/Resources/extensions"
 	cp -RH "$CALLDIR/modules/zotero-word-for-mac-integration" "$CONTENTSDIR/Resources/extensions/zoteroMacWordIntegration@zotero.org"
@@ -335,19 +344,19 @@ if [ $BUILD_MAC == 1 ]; then
 		rm -rf "$CONTENTSDIR/Resources/extensions/$ext/.git"
 	done
 	echo
-	
+
     # Add Abbreviation Filter (abbrevs-filter)
 	cp -RH "$CALLDIR/modules/abbrevs-filter" "$CONTENTSDIR/Resources/extensions/abbrevs-filter@juris-m.github.io"
-    
+
     # Add jurisdiction support (myles)
 	cp -RH "$CALLDIR/modules/myles" "$CONTENTSDIR/Resources/extensions/myles@juris-m.github.io"
-	
+
     # Add Bluebook signal helper (bluebook-signals-for-zotero)
 	cp -RH "$CALLDIR/modules/bluebook-signals-for-zotero" "$CONTENTSDIR/Resources/extensions/bluebook-signals-for-zotero@mystery-lab.com"
-	
+
     # Add ODF/RTF Scan (zotero-odf-scan)
 	cp -RH "$CALLDIR/modules/zotero-odf-scan-plugin" "$CONTENTSDIR/Resources/extensions/rtf-odf-scan-for-zotero@mystery-lab.com"
-	
+
 	# Delete extraneous files
 	${GFIND} "$CONTENTSDIR" -depth -type d -name .git -exec rm -rf {} \;
 	${GFIND} "$CONTENTSDIR" \( -name .DS_Store -or -name update.rdf \) -exec rm -f {} \;
@@ -357,12 +366,14 @@ if [ $BUILD_MAC == 1 ]; then
 	# needs to be stable for the signature
 	cp "$CALLDIR/update-packaging/removed-files_mac" "$CONTENTSDIR/Resources/removed-files"
 	touch "$CONTENTSDIR/Resources/precomplete"
-	
+
 	# Sign
 	if [ $SIGN == 1 ]; then
 		/usr/bin/codesign --force --sign "$DEVELOPER_ID" "$APPDIR/Contents/MacOS/updater.app/Contents/MacOS/org.mozilla.updater"
 		/usr/bin/codesign --force --sign "$DEVELOPER_ID" "$APPDIR/Contents/MacOS/updater.app"
-		/usr/bin/codesign --force --sign "$DEVELOPER_ID" "$APPDIR/Contents/MacOS/zotero-bin"
+		/usr/bin/codesign --force --sign "$DEVELOPER_ID" "$APPDIR/Contents/MacOS/pdftotext"
+		/usr/bin/codesign --force --sign "$DEVELOPER_ID" "$APPDIR/Contents/MacOS/pdfinfo"
+		/usr/bin/codesign --force --sign "$DEVELOPER_ID" "$APPDIR/Contents/MacOS/zotero"
 		/usr/bin/codesign --force --sign "$DEVELOPER_ID" "$APPDIR"
 		/usr/bin/codesign --verify -vvvv "$APPDIR"
 	fi
@@ -386,18 +397,18 @@ fi
 # Win32
 if [ $BUILD_WIN32 == 1 ]; then
 	echo 'Building Jurism_win32'
-	
+
 	# Set up directory
 	APPDIR="$STAGE_DIR/Jurism_win32"
 	rm -rf "$APPDIR"
 	mkdir "$APPDIR"
-	
+
 	# Modify platform-specific prefs
 	perl -pi -e 's/%GECKO_VERSION%/'"$GECKO_VERSION_WIN"'/g' "$BUILD_DIR/zotero/defaults/preferences/prefs.js"
-	
+
 	# Copy relevant assets from Firefox
 	cp -R "$WIN32_RUNTIME_PATH"/!(application.ini|browser|defaults|devtools-files|crashreporter*|firefox.exe|maintenanceservice*|precomplete|removed-files|uninstall|update*) "$APPDIR"
-	
+
 	# Copy jurism.exe, which is xulrunner-stub from https://github.com/duanyao/xulrunner-stub
 	# modified with ReplaceVistaIcon.exe and edited with Resource Hacker
 	#
@@ -415,19 +426,24 @@ if [ $BUILD_WIN32 == 1 ]; then
 	# Use our own updater, because Mozilla's requires updates signed by Mozilla
 	cp "$CALLDIR/win/updater.exe" "$APPDIR"
 	cat "$CALLDIR/win/installer/updater_append.ini" >> "$APPDIR/updater.ini"
-	
+
+	# Copy PDF tools and data
+	cp "$CALLDIR/pdftools/pdftotext-win.exe" "$APPDIR/pdftotext.exe"
+	cp "$CALLDIR/pdftools/pdfinfo-win.exe" "$APPDIR/pdfinfo.exe"
+	cp -R "$CALLDIR/pdftools/poppler-data" "$APPDIR/"
+
 	cp -R "$BUILD_DIR/zotero/"* "$BUILD_DIR/application.ini" "$APPDIR"
-	
+
 	# Add Windows-specific Standalone assets
 	cd "$CALLDIR/assets/win"
 	zip -r -q "$APPDIR/jurism.jar" *
-	
+
 	# Add devtools
 	if [ $DEVTOOLS -eq 1 ]; then
 		cp -r "$WIN32_RUNTIME_PATH"/devtools-files/chrome/* "$APPDIR/chrome/"
 		cp "$WIN32_RUNTIME_PATH/devtools-files/components/interfaces.xpt" "$APPDIR/components/"
 	fi
-	
+
 	# Add word processor plug-ins
         mkdir "$APPDIR/extensions"
         cp -RH "$CALLDIR/modules/zotero-word-for-windows-integration" "$APPDIR/extensions/zoteroWinWordIntegration@zotero.org"
@@ -449,13 +465,13 @@ if [ $BUILD_WIN32 == 1 ]; then
 
     # Add Jurisdiction Support (myles)
 	cp -RH "$CALLDIR/modules/myles" "$APPDIR/extensions/myles@juris-m.github.io"
-	
+
     # Add Bluebook signal helper (bluebook-signals-for-zotero)
 	cp -RH "$CALLDIR/modules/bluebook-signals-for-zotero" "$APPDIR/extensions/bluebook-signals-for-zotero@mystery-lab.com"
-	
+
     # Add ODF/RTF Scan (zotero-odf-scan)
 	cp -RH "$CALLDIR/modules/zotero-odf-scan-plugin" "$APPDIR/extensions/rtf-odf-scan-for-zotero@mystery-lab.com"
-		
+
 	# Delete extraneous files
 	${GFIND} "$APPDIR" -depth -type d -name .git -exec rm -rf {} \;
 	${GFIND} "$APPDIR" \( -name .DS_Store -or -name '.git*' -or -name '.travis.yml' -or -name update.rdf -or -name '*.bak' \) -exec rm -f {} \;
@@ -465,62 +481,77 @@ if [ $BUILD_WIN32 == 1 ]; then
 	if [ $PACKAGE == 1 ]; then
 		if [ $WIN_NATIVE == 1 ]; then
 			INSTALLER_PATH="$DIST_DIR/jurism-for-windows-all-${VERSION}_setup.exe"
-			
+
 			echo 'Creating Windows installer'
 			# Copy installer files
 			cp -r "$CALLDIR/win/installer" "$BUILD_DIR/win_installer"
-			
+
 			# Build and sign uninstaller
 			perl -pi -e "s/\{\{VERSION}}/$VERSION/" "$BUILD_DIR/win_installer/defines.nsi"
-			"`cygpath -u \"$MAKENSISU\"`" /V1 "`cygpath -w \"$BUILD_DIR/win_installer/uninstaller.nsi\"`"
+			"`cygpath -u \"${NSIS_DIR}makensis.exe\"`" /V1 "`cygpath -w \"$BUILD_DIR/win_installer/uninstaller.nsi\"`"
 			mkdir "$APPDIR/uninstall"
 			mv "$BUILD_DIR/win_installer/helper.exe" "$APPDIR/uninstall"
-			
+
 			# Sign jurism.exe, dlls, updater, and uninstaller
 			if [ $SIGN == 1 ]; then
-				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism" \
-					/du "$SIGNATURE_URL" "`cygpath -w \"$APPDIR/jurism.exe\"`"
-				for dll in "$APPDIR/"*.dll "$APPDIR/xulrunner/"*.dll; do
+				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" \
+				/d "Jurism" /du "$SIGNATURE_URL" \
+				/t http://timestamp.verisign.com/scripts/timstamp.dll \
+				 "`cygpath -w \"$APPDIR/jurism.exe\"`"
+				for dll in "$APPDIR/"*.dll" $APPDIR/xulrunner/"*.dll; do
 					"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism" \
 						/du "$SIGNATURE_URL" "`cygpath -w \"$dll\"`"
 				done
-				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism Updater" \
-					/du "$SIGNATURE_URL" "`cygpath -w \"$APPDIR/xulrunner/updater.exe\"`"
-				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism Uninstaller" \
-					/du "$SIGNATURE_URL" "`cygpath -w \"$APPDIR/uninstall/helper.exe\"`"
+				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism Updater" /du "$SIGNATURE_URL" \
+				/t http://timestamp.verisign.com/scripts/timstamp.dll \
+				"`cygpath -w \"$APPDIR/xulrunner/updater.exe\"`"
+				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism Uninstaller" /du "$SIGNATURE_URL" \
+				/t http://timestamp.verisign.com/scripts/timstamp.dll \
+				"`cygpath -w \"$APPDIR/uninstall/helper.exe\"`"
+				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" \
+					/d "PDF Converter" /du "$SIGNATURE_URL" \
+					/t http://timestamp.verisign.com/scripts/timstamp.dll \
+					"`cygpath -w \"$APPDIR/pdftotext.exe\"`"
+				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" \
+					/d "PDF Info" /du "$SIGNATURE_URL" \
+					/t http://timestamp.verisign.com/scripts/timstamp.dll \
+					"`cygpath -w \"$APPDIR/pdfinfo.exe\"`"
 			fi
-			
+
 			# Stage installer
 			INSTALLER_STAGE_DIR="$BUILD_DIR/win_installer/staging"
 			mkdir "$INSTALLER_STAGE_DIR"
 			cp -R "$APPDIR" "$INSTALLER_STAGE_DIR/core"
-			
+
 			# Build and sign setup.exe
-			"`cygpath -u \"$MAKENSISU\"`" /V1 "`cygpath -w \"$BUILD_DIR/win_installer/installer.nsi\"`"
+			"`cygpath -u \"${NSIS_DIR}makensis.exe\"`" /V1 "`cygpath -w \"$BUILD_DIR/win_installer/installer.nsi\"`"
 			mv "$BUILD_DIR/win_installer/setup.exe" "$INSTALLER_STAGE_DIR"
 			if [ $SIGN == 1 ]; then
-				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism Setup" \
-					/du "$SIGNATURE_URL" "`cygpath -w \"$INSTALLER_STAGE_DIR/setup.exe\"`"
+				"`cygpath -u \"$SIGNTOOL\"`" sign /n "$SIGNTOOL_CERT_SUBJECT" /d "Jurism Setup" /du "$SIGNATURE_URL" \
+				/t http://timestamp.verisign.com/scripts/timstamp.dll \
+					"`cygpath -w \"$INSTALLER_STAGE_DIR/setup.exe\"`"
 			fi
-			
+
 			# Compress application
 			cd "$INSTALLER_STAGE_DIR" && 7z a -r -t7z "`cygpath -w \"$BUILD_DIR/app_win32.7z\"`" \
 				-mx -m0=BCJ2 -m1=LZMA:d24 -m2=LZMA:d19 -m3=LZMA:d19  -mb0:1 -mb0s1:2 -mb0s2:3 > /dev/null
-				
+
 			# Compress 7zSD.sfx
 			upx --best -o "`cygpath -w \"$BUILD_DIR/7zSD.sfx\"`" \
 				"`cygpath -w \"$CALLDIR/win/installer/7zstub/firefox/7zSD.sfx\"`" > /dev/null
-			
+
 			# Combine 7zSD.sfx and app.tag into setup.exe
 			cat "$BUILD_DIR/7zSD.sfx" "$CALLDIR/win/installer/app.tag" \
 				"$BUILD_DIR/app_win32.7z" > "$INSTALLER_PATH"
-			
+
 			# Sign Zotero_setup.exe
 			if [ $SIGN == 1 ]; then
-				"`cygpath -u \"$SIGNTOOL\"`" sign /a /d "Jurism Setup" \
-					/du "$SIGNATURE_URL" "`cygpath -w \"$INSTALLER_PATH\"`"
+				"`cygpath -u \"$SIGNTOOL\"`" sign /a \
+				/d "Jurism Setup" /du "$SIGNATURE_URL" \
+				/t http://timestamp.verisign.com/scripts/timstamp.dll \
+				"`cygpath -w \"$INSTALLER_PATH\"`"
 			fi
-			
+
 			chmod 755 "$INSTALLER_PATH"
 		else
 			echo 'Not building on Windows; only building zip file'
@@ -533,42 +564,47 @@ fi
 if [ $BUILD_LINUX == 1 ]; then
 	for arch in "i686" "x86_64"; do
 		RUNTIME_PATH=`eval echo '$LINUX_'$arch'_RUNTIME_PATH'`
-		
+
 		# Set up directory
 		echo 'Building Jurism_linux-'$arch
 		APPDIR="$STAGE_DIR/Jurism_linux-$arch"
 		rm -rf "$APPDIR"
 		mkdir "$APPDIR"
-		
+
 		# Merge relevant assets from Firefox
-		cp -r "$RUNTIME_PATH/"!(application.ini|browser|defaults|devtools-files|crashreporter|crashreporter.ini|firefox-bin|precomplete|removed-files|run-mozilla.sh|update-settings.ini|updater|updater.ini) "$APPDIR"
-		
+		cp -r "$RUNTIME_PATH/"!(application.ini|browser|defaults|devtools-files|crashreporter|crashreporter.ini|firefox-bin|pingsender|precomplete|removed-files|run-mozilla.sh|update-settings.ini|updater|updater.ini) "$APPDIR"
+
 		# Use our own launcher that calls the original Firefox executable with -app
 		mv "$APPDIR"/firefox "$APPDIR"/jurism-bin
 		cp "$CALLDIR/linux/jurism" "$APPDIR"/jurism
-		
+
 		# Copy Ubuntu launcher files
 		cp "$CALLDIR/linux/jurism.desktop" "$APPDIR"
 		cp "$CALLDIR/linux/set_launcher_icon" "$APPDIR"
-		
+
 		# Use our own updater, because Mozilla's requires updates signed by Mozilla
 		cp "$CALLDIR/linux/updater-$arch" "$APPDIR"/updater
-		
+
+		# Copy PDF tools and data
+		cp "$CALLDIR/pdftools/pdftotext-linux-$arch" "$APPDIR/pdftotext"
+		cp "$CALLDIR/pdftools/pdfinfo-linux-$arch" "$APPDIR/pdfinfo"
+		cp -R "$CALLDIR/pdftools/poppler-data" "$APPDIR/"
+
 		cp -R "$BUILD_DIR/zotero/"* "$BUILD_DIR/application.ini" "$APPDIR"
-		
+
 		# Modify platform-specific prefs
 		perl -pi -e 's/pref\("browser\.preferences\.instantApply", false\);/pref\("browser\.preferences\.instantApply", true);/' "$BUILD_DIR/zotero/defaults/preferences/prefs.js"
-		
+
 		# Add Unix-specific Standalone assets
 		cd "$CALLDIR/assets/unix"
 		zip -0 -r -q "$APPDIR/jurism.jar" *
-		
+
 		# Add devtools
 		if [ $DEVTOOLS -eq 1 ]; then
 			cp -r "$RUNTIME_PATH"/devtools-files/chrome/* "$APPDIR/chrome/"
 			cp "$RUNTIME_PATH/devtools-files/components/interfaces.xpt" "$APPDIR/components/"
 		fi
-        
+
 		# Add word processor plug-ins
 		mkdir "$APPDIR/extensions"
 		cp -RH "$CALLDIR/modules/zotero-libreoffice-integration" "$APPDIR/extensions/zoteroOpenOfficeIntegration@zotero.org"
@@ -579,24 +615,24 @@ if [ $BUILD_LINUX == 1 ]; then
 		perl -ne 'print and last if s/.*<em:version>(.*)<\/em:version>.*/\1/;' "$APPDIR/extensions/zoteroOpenOfficeIntegration@zotero.org/install.rdf"
 		echo
 		rm -rf "$APPDIR/extensions/zoteroOpenOfficeIntegration@zotero.org/.git"
-        
+
         # Add Abbreviation Filter (abbrevs-filter)
 		cp -RH "$CALLDIR/modules/abbrevs-filter" "$APPDIR/extensions/abbrevs-filter@juris-m.github.io"
 
         # Add Jurisdiction Support (myles)
 		cp -RH "$CALLDIR/modules/myles" "$APPDIR/extensions/myles@juris-m.github.io"
-		
+
         # Add Bluebook signal helper (bluebook-signals-for-zotero)
 		cp -RH "$CALLDIR/modules/bluebook-signals-for-zotero" "$APPDIR/extensions/bluebook-signals-for-zotero@mystery-lab.com"
-		
+
         # Add ODF/RTF Scan (zotero-odf-scan)
 		cp -RH "$CALLDIR/modules/zotero-odf-scan-plugin" "$APPDIR/extensions/rtf-odf-scan-for-zotero@mystery-lab.com"
-		
+
 		# Delete extraneous files
 		${GFIND} "$APPDIR" -depth -type d -name .git -exec rm -rf {} \;
 		${GFIND} "$APPDIR" \( -name .DS_Store -or -name update.rdf \) -exec rm -f {} \;
 		${GFIND} "$APPDIR/extensions" -depth -type d -name build -exec rm -rf {} \;
-		
+
 		if [ $PACKAGE == 1 ]; then
 			# Create tar
 			rm -f "$DIST_DIR/Jurism-${VERSION}_linux-$arch.tar.bz2"
