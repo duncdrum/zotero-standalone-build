@@ -88,7 +88,7 @@ The script should complete without error, and leave a copy (or in the case of Li
 To more quickly build only an unpacked copy of the runtime in the `./staging` directory, use the `-s` option:
 ```bash
   prompt> ./build.sh -s
-``
+```
 
 ## Signing, updates, and distribution
 
